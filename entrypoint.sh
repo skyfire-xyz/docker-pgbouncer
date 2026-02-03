@@ -47,8 +47,8 @@ if [ ! -e "${_AUTH_FILE}" ]; then
   touch "${_AUTH_FILE}"
 fi
 
-if [ -n "$DB_USER" -a -n "$DB_PASSWORD" -a -e "${_AUTH_FILE}" ] && ! grep -q "^\"$DB_USER\"" "${_AUTH_FILE}"; then
-  if [ "$AUTH_TYPE" == "plain" ] || [ "$AUTH_TYPE" == "scram-sha-256" ]; then
+if test -n "$DB_USER" -a -n "$DB_PASSWORD" -a -e "${_AUTH_FILE}" && ! grep -q "^\"$DB_USER\"" "${_AUTH_FILE}"; then
+  if test "$AUTH_TYPE" = "plain" -o "$AUTH_TYPE" = "scram-sha-256"; then
      pass="$DB_PASSWORD"
   else
      pass="md5$(echo -n "$DB_PASSWORD$DB_USER" | md5sum | cut -f 1 -d ' ')"
@@ -58,8 +58,8 @@ if [ -n "$DB_USER" -a -n "$DB_PASSWORD" -a -e "${_AUTH_FILE}" ] && ! grep -q "^\
 fi
 
 # Add Datadog user if provided
-if [ -n "$DATADOG_USER" -a -n "$DATADOG_PASSWORD" -a -e "${_AUTH_FILE}" ] && ! grep -q "^\"$DATADOG_USER\"" "${_AUTH_FILE}"; then
-  if [ "$AUTH_TYPE" == "plain" ] || [ "$AUTH_TYPE" == "scram-sha-256" ]; then
+if test -n "$DATADOG_USER" -a -n "$DATADOG_PASSWORD" -a -e "${_AUTH_FILE}" && ! grep -q "^\"$DATADOG_USER\"" "${_AUTH_FILE}"; then
+  if test "$AUTH_TYPE" = "plain" -o "$AUTH_TYPE" = "scram-sha-256"; then
      pass="$DATADOG_PASSWORD"
   else
      pass="md5$(echo -n "$DATADOG_PASSWORD$DATADOG_USER" | md5sum | cut -f 1 -d ' ')"
