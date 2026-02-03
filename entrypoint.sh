@@ -53,8 +53,8 @@ if [ -n "$DB_USER" -a -n "$DB_PASSWORD" -a -e "${_AUTH_FILE}" ] && ! grep -q "^\
   else
      pass="md5$(echo -n "$DB_PASSWORD$DB_USER" | md5sum | cut -f 1 -d ' ')"
   fi
-  echo "\"$DB_USER\" \"$pass\"" >> ${PG_CONFIG_DIR}/userlist.txt
-  echo "Wrote authentication credentials to ${PG_CONFIG_DIR}/userlist.txt"
+  echo "\"$DB_USER\" \"$pass\"" >> ${_AUTH_FILE}
+  echo "Wrote authentication credentials to ${_AUTH_FILE}"
 fi
 
 # Add Datadog user if provided
@@ -64,8 +64,8 @@ if [ -n "$DATADOG_USER" -a -n "$DATADOG_PASSWORD" -a -e "${_AUTH_FILE}" ] && ! g
   else
      pass="md5$(echo -n "$DATADOG_PASSWORD$DATADOG_USER" | md5sum | cut -f 1 -d ' ')"
   fi
-  echo "\"$DATADOG_USER\" \"$pass\"" >> ${PG_CONFIG_DIR}/userlist.txt
-  echo "Wrote Datadog credentials to ${PG_CONFIG_DIR}/userlist.txt"
+  echo "\"$DATADOG_USER\" \"$pass\"" >> ${_AUTH_FILE}
+  echo "Wrote Datadog credentials to ${_AUTH_FILE}"
 fi
 
 if [ ! -f ${PG_CONFIG_DIR}/pgbouncer.ini ]; then
