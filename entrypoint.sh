@@ -57,6 +57,17 @@ if [ -n "$DB_USER" -a -n "$DB_PASSWORD" -a -e "${_AUTH_FILE}" ] && ! grep -q "^\
   echo "Wrote authentication credentials to ${PG_CONFIG_DIR}/userlist.txt"
 fi
 
+# Add Datadog user if provided
+if [ -n "$DATADOG_USER" -a -n "$DATADOG_PASSWORD" -a -e "${_AUTH_FILE}" ] && ! grep -q "^\"$DATADOG_USER\"" "${_AUTH_FILE}"; then
+  if [ "$AUTH_TYPE" == "plain" ] || [ "$AUTH_TYPE" == "scram-sha-256" ]; then
+     pass="$DATADOG_PASSWORD"
+  else
+     pass="md5$(echo -n "$DATADOG_PASSWORD$DATADOG_USER" | md5sum | cut -f 1 -d ' ')"
+  fi
+  echo "\"$DATADOG_USER\" \"$pass\"" >> ${PG_CONFIG_DIR}/userlist.txt
+  echo "Wrote Datadog credentials to ${PG_CONFIG_DIR}/userlist.txt"
+fi
+
 if [ ! -f ${PG_CONFIG_DIR}/pgbouncer.ini ]; then
   echo "Create pgbouncer config in ${PG_CONFIG_DIR}"
 
