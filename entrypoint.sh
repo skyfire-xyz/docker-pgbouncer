@@ -74,11 +74,56 @@ if [ ! -f ${PG_CONFIG_DIR}/pgbouncer.ini ]; then
 # Config file is in “ini” format. Section names are between “[” and “]”.
 # Lines starting with “;” or “#” are taken as comments and ignored.
 # The characters “;” and “#” are not recognized when they appear later in the line.
+
+  # Build [databases] section, supporting multiple databases via
+  # DB_COUNT + DATABASE_URL_1, DATABASE_URL_2, ...
+  DATABASES_SECTION=""
+  if [ -n "$DB_COUNT" ]; then
+    i=1
+    while [ "$i" -le "$DB_COUNT" ]; do
+      eval db_url=\${DATABASE_URL_${i}}
+      if [ -z "$db_url" ]; then
+        echo "DATABASE_URL_${i} is not set but DB_COUNT=${DB_COUNT}" >&2
+        exit 1
+      fi
+
+      proto="$(echo $db_url | grep :// | sed -e's,^\(.*://\).*,\1,g')"
+      url="$(echo $db_url | sed -e s,$proto,,g)"
+
+      userpass=$(echo $url | grep @ | sed -r 's/^(.*)@([^@]*)$/\1/')
+      db_password_tmp="$(echo $userpass | grep : | cut -d: -f2)"
+      if [ -n "$db_password_tmp" ]; then
+        db_user_tmp=$(echo $userpass | grep : | cut -d: -f1)
+      else
+        db_user_tmp=$userpass
+      fi
+
+      hostport=`echo $url | sed -e s,$userpass@,,g | cut -d/ -f1`
+      port=`echo $hostport | grep : | cut -d: -f2`
+      if [ -n "$port" ]; then
+          db_host_tmp=`echo $hostport | grep : | cut -d: -f1`
+          db_port_tmp=$port
+      else
+          db_host_tmp=$hostport
+          db_port_tmp=5432
+      fi
+
+      db_name_tmp="$(echo $url | grep / | cut -d/ -f2-)"
+      if [ -z "$db_name_tmp" ]; then
+        db_name_tmp="*"
+      fi
+
+      DATABASES_SECTION="${DATABASES_SECTION}${db_name_tmp} = host=${db_host_tmp} port=${db_port_tmp} auth_user=${db_user_tmp:-postgres}\n"
+      i=$((i+1))
+    done
+  else
+    DATABASES_SECTION="${DB_NAME:-*} = host=${DB_HOST:?"Setup pgbouncer config error! You must set DB_HOST env"} port=${DB_PORT:-5432} auth_user=${DB_USER:-postgres}\n"
+  fi
+
   printf "\
 ################## Auto generated ##################
 [databases]
-${DB_NAME:-*} = host=${DB_HOST:?"Setup pgbouncer config error! You must set DB_HOST env"} \
-port=${DB_PORT:-5432} auth_user=${DB_USER:-postgres}
+${DATABASES_SECTION}\
 ${CLIENT_ENCODING:+client_encoding = ${CLIENT_ENCODING}\n}\
 
 [pgbouncer]
