@@ -58,7 +58,33 @@ if [ -n "$DB_COUNT" ] && [ -e "${_AUTH_FILE}" ]; then
       db_name_tmp="*"
     fi
 
-    DATABASES_SECTION="${DATABASES_SECTION}${db_name_tmp} = host=${db_host_tmp} port=${db_port_tmp} auth_user=${db_user_tmp:-postgres}\n"
+    # Optional per-database overrides via envs suffixed with index:
+    # DB_POOL_SIZE_<i>, DB_DEFAULT_POOL_SIZE_<i>, DB_MAX_CLIENT_CONN_<i>,
+    # DB_MIN_POOL_SIZE_<i>, DB_RESERVE_POOL_SIZE_<i>
+    eval db_pool_size=\${DB_POOL_SIZE_${i}}
+    eval db_default_pool_size=\${DB_DEFAULT_POOL_SIZE_${i}}
+    eval db_max_client_conn=\${DB_MAX_CLIENT_CONN_${i}}
+    eval db_min_pool_size=\${DB_MIN_POOL_SIZE_${i}}
+    eval db_reserve_pool_size=\${DB_RESERVE_POOL_SIZE_${i}}
+
+    db_line="${db_name_tmp} = host=${db_host_tmp} port=${db_port_tmp} auth_user=${db_user_tmp:-postgres}"
+    if [ -n "$db_pool_size" ]; then
+      db_line="${db_line} pool_size=${db_pool_size}"
+    fi
+    if [ -n "$db_default_pool_size" ]; then
+      db_line="${db_line} default_pool_size=${db_default_pool_size}"
+    fi
+    if [ -n "$db_max_client_conn" ]; then
+      db_line="${db_line} max_client_conn=${db_max_client_conn}"
+    fi
+    if [ -n "$db_min_pool_size" ]; then
+      db_line="${db_line} min_pool_size=${db_min_pool_size}"
+    fi
+    if [ -n "$db_reserve_pool_size" ]; then
+      db_line="${db_line} reserve_pool_size=${db_reserve_pool_size}"
+    fi
+
+    DATABASES_SECTION="${DATABASES_SECTION}${db_line}\n"
 
     if test -n "$db_user_tmp" -a -n "$db_password_tmp" && ! grep -q "^\"$db_user_tmp\"" "${_AUTH_FILE}"; then
       if test "$AUTH_TYPE" = "plain" -o "$AUTH_TYPE" = "scram-sha-256"; then
