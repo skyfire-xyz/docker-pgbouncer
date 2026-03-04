@@ -8,35 +8,6 @@ set -e
 
 PG_CONFIG_DIR=/etc/pgbouncer
 
-if [ -n "$DATABASE_URL" ]; then
-  # Thanks to https://stackoverflow.com/a/17287984/146289
-
-  # Allow to pass values like dj-database-url / django-environ accept
-  proto="$(echo $DATABASE_URL | grep :// | sed -e's,^\(.*://\).*,\1,g')"
-  url="$(echo $DATABASE_URL | sed -e s,$proto,,g)"
-
-  # extract the user and password (if any)
-  userpass=$(echo $url | grep @ | sed -r 's/^(.*)@([^@]*)$/\1/')
-  DB_PASSWORD="$(echo $userpass | grep : | cut -d: -f2)"
-  if [ -n "$DB_PASSWORD" ]; then
-    DB_USER=$(echo $userpass | grep : | cut -d: -f1)
-  else
-    DB_USER=$userpass
-  fi
-
-  # extract the host -- updated
-  hostport=`echo $url | sed -e s,$userpass@,,g | cut -d/ -f1`
-  port=`echo $hostport | grep : | cut -d: -f2`
-  if [ -n "$port" ]; then
-      DB_HOST=`echo $hostport | grep : | cut -d: -f1`
-      DB_PORT=$port
-  else
-      DB_HOST=$hostport
-  fi
-
-  DB_NAME="$(echo $url | grep / | cut -d/ -f2-)"
-fi
-
 # Write the password with MD5 encryption, to avoid printing it during startup.
 # Notice that `docker inspect` will show unencrypted env variables.
 _AUTH_FILE="${AUTH_FILE:-$PG_CONFIG_DIR/userlist.txt}"
@@ -47,14 +18,60 @@ if [ ! -e "${_AUTH_FILE}" ]; then
   touch "${_AUTH_FILE}"
 fi
 
-if test -n "$DB_USER" -a -n "$DB_PASSWORD" -a -e "${_AUTH_FILE}" && ! grep -q "^\"$DB_USER\"" "${_AUTH_FILE}"; then
-  if test "$AUTH_TYPE" = "plain" -o "$AUTH_TYPE" = "scram-sha-256"; then
-     pass="$DB_PASSWORD"
-  else
-     pass="md5$(echo -n "$DB_PASSWORD$DB_USER" | md5sum | cut -f 1 -d ' ')"
-  fi
-  echo "\"$DB_USER\" \"$pass\"" >> ${_AUTH_FILE}
-  echo "Wrote authentication credentials to ${_AUTH_FILE}"
+DATABASES_SECTION=""
+
+# When DB_COUNT is set, parse each DATABASE_URL_i once and:
+# - add database line to DATABASES_SECTION
+# - add corresponding user to userlist.txt (if not present)
+if [ -n "$DB_COUNT" ] && [ -e "${_AUTH_FILE}" ]; then
+  i=1
+  while [ "$i" -le "$DB_COUNT" ]; do
+    eval db_url=\${DATABASE_URL_${i}}
+    if [ -z "$db_url" ]; then
+      echo "DATABASE_URL_${i} is not set but DB_COUNT=${DB_COUNT}" >&2
+      exit 1
+    fi
+
+    proto="$(echo $db_url | grep :// | sed -e's,^\(.*://\).*,\1,g')"
+    url="$(echo $db_url | sed -e s,$proto,,g)"
+
+    userpass=$(echo $url | grep @ | sed -r 's/^(.*)@([^@]*)$/\1/')
+    db_password_tmp="$(echo $userpass | grep : | cut -d: -f2)"
+    if [ -n "$db_password_tmp" ]; then
+      db_user_tmp=$(echo $userpass | grep : | cut -d: -f1)
+    else
+      db_user_tmp=$userpass
+    fi
+
+    hostport=`echo $url | sed -e s,$userpass@,,g | cut -d/ -f1`
+    port=`echo $hostport | grep : | cut -d: -f2`
+    if [ -n "$port" ]; then
+        db_host_tmp=`echo $hostport | grep : | cut -d: -f1`
+        db_port_tmp=$port
+    else
+        db_host_tmp=$hostport
+        db_port_tmp=5432
+    fi
+
+    db_name_tmp="$(echo $url | grep / | cut -d/ -f2-)"
+    if [ -z "$db_name_tmp" ]; then
+      db_name_tmp="*"
+    fi
+
+    DATABASES_SECTION="${DATABASES_SECTION}${db_name_tmp} = host=${db_host_tmp} port=${db_port_tmp} auth_user=${db_user_tmp:-postgres}\n"
+
+    if test -n "$db_user_tmp" -a -n "$db_password_tmp" && ! grep -q "^\"$db_user_tmp\"" "${_AUTH_FILE}"; then
+      if test "$AUTH_TYPE" = "plain" -o "$AUTH_TYPE" = "scram-sha-256"; then
+         pass="$db_password_tmp"
+      else
+         pass="md5$(echo -n "$db_password_tmp$db_user_tmp" | md5sum | cut -f 1 -d ' ')"
+      fi
+      echo "\"$db_user_tmp\" \"$pass\"" >> ${_AUTH_FILE}
+      echo "Wrote authentication credentials for ${db_user_tmp} to ${_AUTH_FILE}"
+    fi
+
+    i=$((i+1))
+  done
 fi
 
 # Add Datadog user if provided
@@ -74,51 +91,6 @@ if [ ! -f ${PG_CONFIG_DIR}/pgbouncer.ini ]; then
 # Config file is in “ini” format. Section names are between “[” and “]”.
 # Lines starting with “;” or “#” are taken as comments and ignored.
 # The characters “;” and “#” are not recognized when they appear later in the line.
-
-  # Build [databases] section, supporting multiple databases via
-  # DB_COUNT + DATABASE_URL_1, DATABASE_URL_2, ...
-  DATABASES_SECTION=""
-  if [ -n "$DB_COUNT" ]; then
-    i=1
-    while [ "$i" -le "$DB_COUNT" ]; do
-      eval db_url=\${DATABASE_URL_${i}}
-      if [ -z "$db_url" ]; then
-        echo "DATABASE_URL_${i} is not set but DB_COUNT=${DB_COUNT}" >&2
-        exit 1
-      fi
-
-      proto="$(echo $db_url | grep :// | sed -e's,^\(.*://\).*,\1,g')"
-      url="$(echo $db_url | sed -e s,$proto,,g)"
-
-      userpass=$(echo $url | grep @ | sed -r 's/^(.*)@([^@]*)$/\1/')
-      db_password_tmp="$(echo $userpass | grep : | cut -d: -f2)"
-      if [ -n "$db_password_tmp" ]; then
-        db_user_tmp=$(echo $userpass | grep : | cut -d: -f1)
-      else
-        db_user_tmp=$userpass
-      fi
-
-      hostport=`echo $url | sed -e s,$userpass@,,g | cut -d/ -f1`
-      port=`echo $hostport | grep : | cut -d: -f2`
-      if [ -n "$port" ]; then
-          db_host_tmp=`echo $hostport | grep : | cut -d: -f1`
-          db_port_tmp=$port
-      else
-          db_host_tmp=$hostport
-          db_port_tmp=5432
-      fi
-
-      db_name_tmp="$(echo $url | grep / | cut -d/ -f2-)"
-      if [ -z "$db_name_tmp" ]; then
-        db_name_tmp="*"
-      fi
-
-      DATABASES_SECTION="${DATABASES_SECTION}${db_name_tmp} = host=${db_host_tmp} port=${db_port_tmp} auth_user=${db_user_tmp:-postgres}\n"
-      i=$((i+1))
-    done
-  else
-    DATABASES_SECTION="${DB_NAME:-*} = host=${DB_HOST:?"Setup pgbouncer config error! You must set DB_HOST env"} port=${DB_PORT:-5432} auth_user=${DB_USER:-postgres}\n"
-  fi
 
   printf "\
 ################## Auto generated ##################
