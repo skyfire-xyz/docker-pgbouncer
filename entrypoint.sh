@@ -71,19 +71,6 @@ if [ -n "$DB_COUNT" ] && [ -e "${_AUTH_FILE}" ]; then
     if [ -n "$db_pool_size" ]; then
       db_line="${db_line} pool_size=${db_pool_size}"
     fi
-    if [ -n "$db_default_pool_size" ]; then
-      db_line="${db_line} default_pool_size=${db_default_pool_size}"
-    fi
-    if [ -n "$db_max_client_conn" ]; then
-      db_line="${db_line} max_client_conn=${db_max_client_conn}"
-    fi
-    if [ -n "$db_min_pool_size" ]; then
-      db_line="${db_line} min_pool_size=${db_min_pool_size}"
-    fi
-    if [ -n "$db_reserve_pool_size" ]; then
-      db_line="${db_line} reserve_pool_size=${db_reserve_pool_size}"
-    fi
-
     DATABASES_SECTION="${DATABASES_SECTION}${db_line}\n"
 
     if test -n "$db_user_tmp" -a -n "$db_password_tmp" && ! grep -q "^\"$db_user_tmp\"" "${_AUTH_FILE}"; then
