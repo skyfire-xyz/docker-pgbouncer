@@ -23,11 +23,11 @@ DATABASES_SECTION=""
 # When DB_COUNT is set, parse each DATABASE_URL_i once and:
 # - add database line to DATABASES_SECTION
 # - add corresponding user to userlist.txt (if not present)
-if [ -n "$DB_COUNT" ] && [ -e "${_AUTH_FILE}" ]; then
+if test -n "$DB_COUNT" -a -e "${_AUTH_FILE}"; then
   i=1
   while [ "$i" -le "$DB_COUNT" ]; do
     eval db_url=\${DATABASE_URL_${i}}
-    if [ -z "$db_url" ]; then
+    if test -z "$db_url"; then
       echo "DATABASE_URL_${i} is not set but DB_COUNT=${DB_COUNT}" >&2
       exit 1
     fi
@@ -37,7 +37,7 @@ if [ -n "$DB_COUNT" ] && [ -e "${_AUTH_FILE}" ]; then
 
     userpass=$(echo $url | grep @ | sed -r 's/^(.*)@([^@]*)$/\1/')
     db_password_tmp="$(echo $userpass | grep : | cut -d: -f2)"
-    if [ -n "$db_password_tmp" ]; then
+    if test -n "$db_password_tmp"; then
       db_user_tmp=$(echo $userpass | grep : | cut -d: -f1)
     else
       db_user_tmp=$userpass
@@ -45,7 +45,7 @@ if [ -n "$DB_COUNT" ] && [ -e "${_AUTH_FILE}" ]; then
 
     hostport=`echo $url | sed -e s,$userpass@,,g | cut -d/ -f1`
     port=`echo $hostport | grep : | cut -d: -f2`
-    if [ -n "$port" ]; then
+    if test -n "$port"; then
         db_host_tmp=`echo $hostport | grep : | cut -d: -f1`
         db_port_tmp=$port
     else
@@ -54,7 +54,7 @@ if [ -n "$DB_COUNT" ] && [ -e "${_AUTH_FILE}" ]; then
     fi
 
     db_name_tmp="$(echo $url | grep / | cut -d/ -f2-)"
-    if [ -z "$db_name_tmp" ]; then
+    if test -z "$db_name_tmp"; then
       db_name_tmp="*"
     fi
 
@@ -62,9 +62,10 @@ if [ -n "$DB_COUNT" ] && [ -e "${_AUTH_FILE}" ]; then
     eval db_pool_size=\${DB_POOL_SIZE_${i}}
   
     db_line="${db_name_tmp} = host=${db_host_tmp} port=${db_port_tmp} auth_user=${db_user_tmp:-postgres}"
-    if [ -n "$db_pool_size" ]; then
+    if test -n "$db_pool_size"; then
       db_line="${db_line} pool_size=${db_pool_size}"
     fi
+    
     DATABASES_SECTION="${DATABASES_SECTION}${db_line}\n"
 
     if test -n "$db_user_tmp" -a -n "$db_password_tmp" && ! grep -q "^\"$db_user_tmp\"" "${_AUTH_FILE}"; then
