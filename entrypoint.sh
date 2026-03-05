@@ -25,7 +25,7 @@ DATABASES_SECTION=""
 # - add corresponding user to userlist.txt (if not present)
 if test -n "$DB_COUNT" -a -e "${_AUTH_FILE}"; then
   i=1
-  while [ "$i" -le "$DB_COUNT" ]; do
+  while test "$i" -le "$DB_COUNT"; do
     eval db_url=\${DATABASE_URL_${i}}
     if test -z "$db_url"; then
       echo "DATABASE_URL_${i} is not set but DB_COUNT=${DB_COUNT}" >&2
