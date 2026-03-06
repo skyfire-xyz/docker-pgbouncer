@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # Based on https://raw.githubusercontent.com/brainsam/pgbouncer/master/entrypoint.sh
 
 set -e
@@ -24,7 +24,7 @@ DATABASES_SECTION=""
 # and for each:
 # - add a line to DATABASES_SECTION
 # - add corresponding user to userlist.txt (if not present)
-DB_URL_VARS=$(env | sed -n 's/^DATABASE_URL_\([0-9][0-9]*\)=.*/DATABASE_URL_\1/p' | sort -t_ -k3,3n)
+DB_URL_VARS=$(printf '%s\n' ${!DATABASE_URL_*} 2>/dev/null | sort -t_ -k3,3n)
 
 if test -n "$DB_URL_VARS" -a -e "${_AUTH_FILE}"; then
   for var in $DB_URL_VARS; do
@@ -64,8 +64,7 @@ if test -n "$DB_URL_VARS" -a -e "${_AUTH_FILE}"; then
     fi
 
     # Optional per-database overrides via env suffixed with index:
-    db_pool_size_tmp=DB_POOL_SIZE_${idx}
-    db_pool_size=${!db_pool_size_tmp}
+    db_pool_size_tmp=DB_POOL_SIZE_${idx}; db_pool_size=${!db_pool_size_tmp}
     
     db_line="${db_name_tmp} = host=${db_host_tmp} port=${db_port_tmp} auth_user=${db_user_tmp:-postgres}"
     if test -n "$db_pool_size"; then
