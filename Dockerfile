@@ -5,7 +5,7 @@ ARG VERSION=1.22.1
 # hadolint ignore=DL3003,DL3018
 RUN \
   # security
-  apk add -U --no-cache --upgrade busybox && \
+  apk add -U --no-cache --upgrade busybox bash && \
   # Download
   apk add -U --no-cache autoconf autoconf-doc automake udns udns-dev curl gcc libc-dev libevent libevent-dev libtool make openssl-dev pkgconfig postgresql-client && \
   curl -o  /tmp/pgbouncer-$VERSION.tar.gz -L https://pgbouncer.github.io/downloads/files/$VERSION/pgbouncer-$VERSION.tar.gz && \
@@ -31,5 +31,5 @@ RUN \
 COPY entrypoint.sh /entrypoint.sh
 USER postgres
 EXPOSE 5432
-ENTRYPOINT ["/entrypoint.sh"]
+ENTRYPOINT ["/bin/bash", "/entrypoint.sh"]
 CMD ["/usr/bin/pgbouncer", "/etc/pgbouncer/pgbouncer.ini"]

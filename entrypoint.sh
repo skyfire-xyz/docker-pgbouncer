@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # Based on https://raw.githubusercontent.com/brainsam/pgbouncer/master/entrypoint.sh
 
 set -e
@@ -7,35 +7,6 @@ set -e
 # https://pgbouncer.github.io/config.html
 
 PG_CONFIG_DIR=/etc/pgbouncer
-
-if [ -n "$DATABASE_URL" ]; then
-  # Thanks to https://stackoverflow.com/a/17287984/146289
-
-  # Allow to pass values like dj-database-url / django-environ accept
-  proto="$(echo $DATABASE_URL | grep :// | sed -e's,^\(.*://\).*,\1,g')"
-  url="$(echo $DATABASE_URL | sed -e s,$proto,,g)"
-
-  # extract the user and password (if any)
-  userpass=$(echo $url | grep @ | sed -r 's/^(.*)@([^@]*)$/\1/')
-  DB_PASSWORD="$(echo $userpass | grep : | cut -d: -f2)"
-  if [ -n "$DB_PASSWORD" ]; then
-    DB_USER=$(echo $userpass | grep : | cut -d: -f1)
-  else
-    DB_USER=$userpass
-  fi
-
-  # extract the host -- updated
-  hostport=`echo $url | sed -e s,$userpass@,,g | cut -d/ -f1`
-  port=`echo $hostport | grep : | cut -d: -f2`
-  if [ -n "$port" ]; then
-      DB_HOST=`echo $hostport | grep : | cut -d: -f1`
-      DB_PORT=$port
-  else
-      DB_HOST=$hostport
-  fi
-
-  DB_NAME="$(echo $url | grep / | cut -d/ -f2-)"
-fi
 
 # Write the password with MD5 encryption, to avoid printing it during startup.
 # Notice that `docker inspect` will show unencrypted env variables.
@@ -47,14 +18,74 @@ if [ ! -e "${_AUTH_FILE}" ]; then
   touch "${_AUTH_FILE}"
 fi
 
-if test -n "$DB_USER" -a -n "$DB_PASSWORD" -a -e "${_AUTH_FILE}" && ! grep -q "^\"$DB_USER\"" "${_AUTH_FILE}"; then
-  if test "$AUTH_TYPE" = "plain" -o "$AUTH_TYPE" = "scram-sha-256"; then
-     pass="$DB_PASSWORD"
-  else
-     pass="md5$(echo -n "$DB_PASSWORD$DB_USER" | md5sum | cut -f 1 -d ' ')"
-  fi
-  echo "\"$DB_USER\" \"$pass\"" >> ${_AUTH_FILE}
-  echo "Wrote authentication credentials to ${_AUTH_FILE}"
+DATABASES_SECTION=""
+
+# Discover all DATABASE_URL_* variables from environment, sorted by index,
+# and for each:
+# - add a line to DATABASES_SECTION
+# - add corresponding user to userlist.txt (if not present)
+DB_URL_VARS=$(printf '%s\n' ${!DATABASE_URL_*} 2>/dev/null | sort -t_ -k3,3n)
+
+if test -n "$DB_URL_VARS" -a -e "${_AUTH_FILE}"; then
+  for var in $DB_URL_VARS; do
+    db_url=${!var}
+    if test -z "$db_url"; then
+      echo "$var is set but empty" >&2
+      exit 1
+    fi
+
+    idx=${var#DATABASE_URL_}
+
+    proto="$(echo "$db_url" | grep :// | sed -e 's,^\(.*://\).*,\1,g')"
+    url="$(echo "$db_url" | sed -e "s,$proto,,g")"
+
+    userpass=$(echo "$url" | grep @ | sed -n 's/^\(.*\)@[^@]*$/\1/p')
+    # Password is everything after first ':' (so passwords containing ':' work)
+    db_password_tmp="$(echo "$userpass" | grep : | cut -d: -f2-)"
+    if test -n "$db_password_tmp"; then
+      db_user_tmp=$(echo "$userpass" | grep : | cut -d: -f1)
+    else
+      db_user_tmp="$userpass"
+    fi
+
+    hostport=$(echo "$url" | sed -e "s,$userpass@,,g" | cut -d/ -f1)
+    port=$(echo "$hostport" | grep : | cut -d: -f2)
+    if test -n "$port"; then
+        db_host_tmp=$(echo "$hostport" | grep : | cut -d: -f1)
+        db_port_tmp="$port"
+    else
+        db_host_tmp="$hostport"
+        db_port_tmp=5432
+    fi
+
+    db_name_tmp="$(echo "$url" | grep / | cut -d/ -f2-)"
+    if test -z "$db_name_tmp"; then
+      db_name_tmp="*"
+    fi
+
+    # Optional per-database overrides via env suffixed with index:
+    db_pool_size_tmp=DB_POOL_SIZE_${idx}; db_pool_size=${!db_pool_size_tmp}
+    
+    db_line="${db_name_tmp} = host=${db_host_tmp} port=${db_port_tmp} auth_user=${db_user_tmp:-postgres}"
+    if test -n "$db_pool_size"; then
+      db_line="${db_line} pool_size=${db_pool_size}"
+    fi
+
+    DATABASES_SECTION="${DATABASES_SECTION}${db_line}\n"
+
+    if test -n "$db_user_tmp" -a -n "$db_password_tmp" && ! grep -q "^\"$db_user_tmp\"" "${_AUTH_FILE}"; then
+      if test "$AUTH_TYPE" = "plain" -o "$AUTH_TYPE" = "scram-sha-256"; then
+         pass="$db_password_tmp"
+      else
+         pass="md5$(echo -n "$db_password_tmp$db_user_tmp" | md5sum | cut -f 1 -d ' ')"
+      fi
+      # Escape double quotes to keep userlist.txt format valid
+      user_escaped=$(echo "$db_user_tmp" | sed 's/"/\\"/g')
+      pass_escaped=$(echo "$pass" | sed 's/"/\\"/g')
+      echo "\"$user_escaped\" \"$pass_escaped\"" >> "${_AUTH_FILE}"
+      echo "Wrote authentication credentials for ${db_user_tmp} to ${_AUTH_FILE}"
+    fi
+  done
 fi
 
 # Add Datadog user if provided
@@ -74,11 +105,11 @@ if [ ! -f ${PG_CONFIG_DIR}/pgbouncer.ini ]; then
 # Config file is in “ini” format. Section names are between “[” and “]”.
 # Lines starting with “;” or “#” are taken as comments and ignored.
 # The characters “;” and “#” are not recognized when they appear later in the line.
+
   printf "\
 ################## Auto generated ##################
 [databases]
-${DB_NAME:-*} = host=${DB_HOST:?"Setup pgbouncer config error! You must set DB_HOST env"} \
-port=${DB_PORT:-5432} auth_user=${DB_USER:-postgres}
+${DATABASES_SECTION}\
 ${CLIENT_ENCODING:+client_encoding = ${CLIENT_ENCODING}\n}\
 
 [pgbouncer]
