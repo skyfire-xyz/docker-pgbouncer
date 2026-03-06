@@ -20,52 +20,58 @@ fi
 
 DATABASES_SECTION=""
 
-# When DB_COUNT is set, parse each DATABASE_URL_i once and:
-# - add database line to DATABASES_SECTION
+# Discover all DATABASE_URL_* variables from environment, sorted by index,
+# and for each:
+# - add a line to DATABASES_SECTION
 # - add corresponding user to userlist.txt (if not present)
-if test -n "$DB_COUNT" -a -e "${_AUTH_FILE}"; then
-  i=1
-  while test "$i" -le "$DB_COUNT"; do
-    eval db_url=\${DATABASE_URL_${i}}
+DB_URL_VARS=$(env | sed -n 's/^DATABASE_URL_\([0-9][0-9]*\)=.*/DATABASE_URL_\1/p' | sort -t_ -k3,3n)
+
+if test -n "$DB_URL_VARS" -a -e "${_AUTH_FILE}"; then
+  for var in $DB_URL_VARS; do
+    db_url=${!var}
     if test -z "$db_url"; then
-      echo "DATABASE_URL_${i} is not set but DB_COUNT=${DB_COUNT}" >&2
+      echo "$var is set but empty" >&2
       exit 1
     fi
 
-    proto="$(echo $db_url | grep :// | sed -e's,^\(.*://\).*,\1,g')"
-    url="$(echo $db_url | sed -e s,$proto,,g)"
+    idx=${var#DATABASE_URL_}
 
-    userpass=$(echo $url | grep @ | sed -r 's/^(.*)@([^@]*)$/\1/')
-    db_password_tmp="$(echo $userpass | grep : | cut -d: -f2)"
+    proto="$(echo "$db_url" | grep :// | sed -e 's,^\(.*://\).*,\1,g')"
+    url="$(echo "$db_url" | sed -e "s,$proto,,g")"
+
+    userpass=$(echo "$url" | grep @ | sed -n 's/^\(.*\)@[^@]*$/\1/p')
+    # Password is everything after first ':' (so passwords containing ':' work)
+    db_password_tmp="$(echo "$userpass" | grep : | cut -d: -f2-)"
     if test -n "$db_password_tmp"; then
-      db_user_tmp=$(echo $userpass | grep : | cut -d: -f1)
+      db_user_tmp=$(echo "$userpass" | grep : | cut -d: -f1)
     else
-      db_user_tmp=$userpass
+      db_user_tmp="$userpass"
     fi
 
-    hostport=`echo $url | sed -e s,$userpass@,,g | cut -d/ -f1`
-    port=`echo $hostport | grep : | cut -d: -f2`
+    hostport=$(echo "$url" | sed -e "s,$userpass@,,g" | cut -d/ -f1)
+    port=$(echo "$hostport" | grep : | cut -d: -f2)
     if test -n "$port"; then
-        db_host_tmp=`echo $hostport | grep : | cut -d: -f1`
-        db_port_tmp=$port
+        db_host_tmp=$(echo "$hostport" | grep : | cut -d: -f1)
+        db_port_tmp="$port"
     else
-        db_host_tmp=$hostport
+        db_host_tmp="$hostport"
         db_port_tmp=5432
     fi
 
-    db_name_tmp="$(echo $url | grep / | cut -d/ -f2-)"
+    db_name_tmp="$(echo "$url" | grep / | cut -d/ -f2-)"
     if test -z "$db_name_tmp"; then
       db_name_tmp="*"
     fi
 
     # Optional per-database overrides via env suffixed with index:
-    eval db_pool_size=\${DB_POOL_SIZE_${i}}
-  
+    db_pool_size_tmp=DB_POOL_SIZE_${idx}
+    db_pool_size=${!db_pool_size_tmp}
+    
     db_line="${db_name_tmp} = host=${db_host_tmp} port=${db_port_tmp} auth_user=${db_user_tmp:-postgres}"
     if test -n "$db_pool_size"; then
       db_line="${db_line} pool_size=${db_pool_size}"
     fi
-    
+
     DATABASES_SECTION="${DATABASES_SECTION}${db_line}\n"
 
     if test -n "$db_user_tmp" -a -n "$db_password_tmp" && ! grep -q "^\"$db_user_tmp\"" "${_AUTH_FILE}"; then
@@ -74,11 +80,12 @@ if test -n "$DB_COUNT" -a -e "${_AUTH_FILE}"; then
       else
          pass="md5$(echo -n "$db_password_tmp$db_user_tmp" | md5sum | cut -f 1 -d ' ')"
       fi
-      echo "\"$db_user_tmp\" \"$pass\"" >> ${_AUTH_FILE}
+      # Escape double quotes to keep userlist.txt format valid
+      user_escaped=$(echo "$db_user_tmp" | sed 's/"/\\"/g')
+      pass_escaped=$(echo "$pass" | sed 's/"/\\"/g')
+      echo "\"$user_escaped\" \"$pass_escaped\"" >> "${_AUTH_FILE}"
       echo "Wrote authentication credentials for ${db_user_tmp} to ${_AUTH_FILE}"
     fi
-
-    i=$((i+1))
   done
 fi
 
